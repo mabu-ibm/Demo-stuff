@@ -1,0 +1,6 @@
+Flask==2.3.3
+Werkzeug==2.3.7
+psutil==5.9.5
+waitress==2.1.2
+gunicorn==21.2.0
+instana==3.4.0	
