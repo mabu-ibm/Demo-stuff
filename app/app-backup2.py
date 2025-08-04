@@ -1,4 +1,60 @@
-#!/usr/bin/env python3
+@app.route('/echo', methods=['POST'])
+def call_echo():
+    """Ruft den Echo Service auf"""
+    metrics['requests_total'] += 1
+    
+    try:
+        # Parameter aus Form oder JSON
+        if request.is_json:
+            data = request.get_json()
+        else:
+            data = request.form.to_dict()
+        
+        message = data.get('message', 'Hello from Load Test!')
+        method = data.get('method', 'POST').upper()
+        vulnerable_payload = data.get('vulnerable_payload') == 'true'
+        
+        # Echo Service aufrufen
+        result = call_echo_service(message, method, vulnerable_payload)
+        
+        if request.is_json:
+            return jsonify(result)
+        else:
+            # Web Interface Response
+            if result['success']:
+                <script>setTimeout(() => window.location.href='/', 3000);</script>
+                """
+    
+    except Exception as e:
+        logger.error(f"Fehler beim Echo Service Aufruf: {e}")
+        error_response = {'error': str(e)}
+        
+        if request.is_json:
+            return jsonify(error_response), 500
+        else:
+            return f"""
+            <div class="status error">❌ Fehler: {e}</div>
+            <script>setTimeout(() => window.location.href='/', 3000);</script>
+            """
+
+@app.route('/stress', methods=['POST'])return f"""
+                <div class="status success">
+                    ✅ Echo Service Response!<br>
+                    Method: {method}<br>
+                    Message: {message}<br>
+                    {'🚨 Vulnerable Payload Sent!' if vulnerable_payload else ''}
+                    <br><br>
+                    Response: {json.dumps(result['response'], indent=2)}
+                </div>
+                <script>setTimeout(() => window.location.href='/', 5000);</script>
+                """
+            else:
+                return f"""
+                <div class="status error">
+                    ❌ Echo Service Error: {result.get('error', 'Unknown error')}<br>
+                    Service URL: {echo_service_url}
+                </div>
+                #!/usr/bin/env python3
 """
 Load Testing Application für Turbonomic und Instana Testing
 Webserver mit stress-ng Integration für Kubernetes Deployment
@@ -8,11 +64,10 @@ import os
 import time
 import json
 import logging
-import instana
 import subprocess
 import threading
-import requests
 from datetime import datetime
+import instana
 from flask import Flask, request, jsonify, render_template_string
 from werkzeug.serving import make_server
 import psutil
@@ -119,8 +174,6 @@ def call_echo_service(message, method='POST', vulnerable_payload=False):
             'error': str(e),
             'service_url': echo_service_url
         }
-
-def run_stress_ng(cpu_workers=2, memory_workers=1, duration=30, memory_size="256M"):
     """
     Führt stress-ng mit konfigurierbaren Parametern aus
     """
@@ -174,7 +227,7 @@ def run_stress_ng(cpu_workers=2, memory_workers=1, duration=30, memory_size="256
     except Exception as e:
         logger.error(f"Fehler beim Ausführen von stress-ng: {e}")
         metrics['stress_tests_running'] = max(0, metrics['stress_tests_running'] - 1)
-        return {'success': False, 'error': str(e)}
+def run_stress_ng(cpu_workers=2, memory_workers=1, duration=30, memory_size="256M"):
 
 # HTML Template für Web Interface
 HTML_TEMPLATE = """
@@ -312,62 +365,6 @@ def get_metrics():
     
     return jsonify(response)
 
-@app.route('/echo', methods=['POST'])
-def call_echo():
-    """Ruft den Echo Service auf"""
-    metrics['requests_total'] += 1
-    
-    try:
-        # Parameter aus Form oder JSON
-        if request.is_json:
-            data = request.get_json()
-        else:
-            data = request.form.to_dict()
-        
-        message = data.get('message', 'Hello from Load Test!')
-        method = data.get('method', 'POST').upper()
-        vulnerable_payload = data.get('vulnerable_payload') == 'true'
-        
-        # Echo Service aufrufen
-        result = call_echo_service(message, method, vulnerable_payload)
-        
-        if request.is_json:
-            return jsonify(result)
-        else:
-            # Web Interface Response
-            if result['success']:
-                return f"""
-                <div class="status success">
-                    ✅ Echo Service Response!<br>
-                    Method: {method}<br>
-                    Message: {message}<br>
-                    {'🚨 Vulnerable Payload Sent!' if vulnerable_payload else ''}
-                    <br><br>
-                    Response: {json.dumps(result['response'], indent=2)}
-                </div>
-                <script>setTimeout(() => window.location.href='/', 5000);</script>
-                """
-            else:
-                return f"""
-                <div class="status error">
-                    ❌ Echo Service Error: {result.get('error', 'Unknown error')}<br>
-                    Service URL: {echo_service_url}
-                </div>
-                <script>setTimeout(() => window.location.href='/', 3000);</script>
-                """
-    
-    except Exception as e:
-        logger.error(f"Fehler beim Echo Service Aufruf: {e}")
-        error_response = {'error': str(e)}
-        
-        if request.is_json:
-            return jsonify(error_response), 500
-        else:
-            return f"""
-            <div class="status error">❌ Fehler: {e}</div>
-            <script>setTimeout(() => window.location.href='/', 3000);</script>
-            """
-
 @app.route('/stress', methods=['POST'])
 def start_stress():
     """Startet einen Stress Test"""
@@ -501,12 +498,7 @@ if __name__ == '__main__':
     
     # Produktionsserver für Container
     if os.environ.get('FLASK_ENV') == 'production':
-        try:
-            from waitress import serve
-            serve(app, host=host, port=port)
-        except ImportError:
-            logger.warning("Waitress nicht verfügbar, nutze Flask development server")
-            app.run(host=host, port=port, debug=False)
+        from waitress import serve
+        serve(app, host=host, port=port)
     else:
         app.run(host=host, port=port, debug=False)
-

